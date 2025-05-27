@@ -1,0 +1,1 @@
+impl core::future::future::Future<Output = tokio::sync::rwlock::read_guard::RwLockReadGuard<'_, order::Order>>
