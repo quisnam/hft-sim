@@ -17,6 +17,15 @@ impl fmt::Display for Side {
     }
 }
 
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OrderType {
+    GoodTillCancel,
+    FillAndKill,
+    FillOrKill,
+    Market,
+}
+
 pub mod order_creator;
 
 /// Order struct
@@ -34,18 +43,20 @@ pub struct Order {
     d_price: u32,
     d_initial_quantity: u32,
     d_remaining_quantity: u32,
-    d_valid: bool
+    d_valid: bool,
+    d_order_type: OrderType,
 }
 
 impl Order {
-    pub fn new(id: u64, side: Side, price: u32, quantity: u32) -> Self {
+    pub fn new(id: u64, side: Side, price: u32, quantity: u32, order_type: OrderType) -> Self {
         Order { 
             d_id: id,
             d_side: side,
             d_price: price,
             d_initial_quantity: quantity,
             d_remaining_quantity: quantity,
-            d_valid: true
+            d_valid: true,
+            d_order_type: order_type,
         }
     }
 
@@ -57,7 +68,8 @@ impl Order {
             d_price: 0,
             d_initial_quantity: 0,
             d_remaining_quantity: 0,
-            d_valid: false 
+            d_valid: false,
+            d_order_type: OrderType::FillAndKill,
         }
     }
 
@@ -88,6 +100,10 @@ impl Order {
 
     pub fn valid(&self) -> bool {
         self.d_valid
+    }
+
+    pub fn order_type(&self) -> OrderType {
+        self.d_order_type.clone()
     }
 
     pub fn invalidate(&mut self) -> Result<(), LogicError> {

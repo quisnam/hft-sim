@@ -7,7 +7,7 @@ use simple_orderbook::{
 async fn main() {
     let mut orderbook = OrderBook::new();
 
-    let order_request = OrderRequest::new(Side::Buy, 10, 5).expect("Invalid Price");
+    let order_request = OrderRequest::new(Side::Buy, 10, 5, OrderType::GoodTillCancel).expect("Invalid Price");
 
     let res = orderbook.add_order(order_request).await;
 
@@ -17,7 +17,7 @@ async fn main() {
         Err(e) => panic!("Err {:?} occured", e)
         
     };
-    let order_request1 = OrderRequest::new(Side::Sell, 7, 3).expect("Invalid Price");
+    let order_request1 = OrderRequest::new(Side::Sell, 7, 3, OrderType::GoodTillCancel).expect("Invalid Price");
     let res = orderbook.add_order(order_request1).await;
     orderbook.display_ob().await;
 

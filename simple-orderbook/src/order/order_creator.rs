@@ -5,6 +5,7 @@ use std::sync::atomic::{
 use crate::Side;
 use crate::LogicError;
 use super::Order;
+use super::OrderType;
 
 /// Struct that returns a valid Order
 /// uses an atomic lock-free counter to create a unique
@@ -31,7 +32,8 @@ impl OrderCreator {
             self.d_order_id_gen.next_id(),
             order_request.d_side,
             order_request.d_price,
-            order_request.d_quantity
+            order_request.d_quantity,
+            order_request.d_order_type,
         )
     } 
 }
@@ -61,24 +63,37 @@ pub struct OrderRequest {
     d_side: Side,
     d_price: u32,
     d_quantity: u32,
+    d_order_type: OrderType,
 }
 
 impl OrderRequest {
-    pub fn new(side: Side, price: u32, quantity: u32) -> Result<OrderRequest, LogicError> {
-        Self::valid(side, price, quantity)
+    pub fn new(side: Side, price: u32, quantity: u32, order_type: OrderType) -> Result<OrderRequest, LogicError> {
+        Self::valid(side, price, quantity, order_type)
     }
 
-    fn valid(side: Side, price: u32, quantity: u32) -> Result<OrderRequest, LogicError> {
+    pub fn market_order_request(side: Side, quantity: u32) -> Result<OrderRequest, LogicError> {
+        Ok(
+            OrderRequest {
+                d_side: side,
+                d_price: 0,
+                d_quantity: quantity,
+                d_order_type: OrderType::Market,
+            }
+        )
+    }
+
+    fn valid(side: Side, price: u32, quantity: u32, order_type: OrderType) -> Result<OrderRequest, LogicError> {
         
        
         Ok(OrderRequest {
             d_side: side,
             d_price: price,
-            d_quantity: quantity
+            d_quantity: quantity,
+            d_order_type: order_type,
         })
     }
 
-    pub fn request(&self) -> (Side, u32, u32) {
-        (self.d_side.clone(), self.d_price, self.d_quantity)
+    pub fn request(&self) -> (Side, u32, u32, OrderType) {
+        (self.d_side.clone(), self.d_price, self.d_quantity, self.d_order_type.clone())
     }
 }
