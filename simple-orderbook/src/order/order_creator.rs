@@ -3,59 +3,60 @@ use std::sync::atomic::{
     Ordering
 };
 use crate::Side;
-use crate::LogicError;
+use crate::SimError;
 use super::Order;
 use super::OrderType;
 
-/// Struct that returns a valid Order
-/// uses an atomic lock-free counter to create a unique
-/// order id. If there are u64::MAX + 1 ids the behaviour
-/// is undefined
-pub struct OrderCreator {
-    d_order_id_gen: OrderIdGen,
-}
 
-impl Default  for OrderCreator {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-impl OrderCreator {
-    pub fn new() -> OrderCreator {
-        OrderCreator { 
-            d_order_id_gen: OrderIdGen::new(),
-        }
-    }
-    
-    pub fn create_order(&self, order_request: OrderRequest) -> Order {
-        Order::new(
-            self.d_order_id_gen.next_id(),
-            order_request.d_side,
-            order_request.d_price,
-            order_request.d_quantity,
-            order_request.d_order_type,
-        )
-    } 
-}
-
-
-/// Generates the ids
-struct OrderIdGen {
-    d_counter: AtomicU64,
-}
-
-impl OrderIdGen {
-    pub fn new() -> Self {
-        OrderIdGen {
-            d_counter: AtomicU64::new(0),
-        }
-    }
-
-    pub fn next_id(&self) -> u64 {
-        self.d_counter.fetch_add(1, Ordering::SeqCst)
-    }
-}
-
+///// Struct that returns a valid Order
+///// uses an atomic lock-free counter to create a unique
+///// order id. If there are u64::MAX + 1 ids the behaviour
+///// is undefined
+//pub struct OrderCreator {
+//    d_order_id_gen: OrderIdGen,
+//}
+//
+//impl Default  for OrderCreator {
+//    fn default() -> Self {
+//        Self::new()
+//    }
+//}
+//impl OrderCreator {
+//    pub fn new() -> OrderCreator {
+//        OrderCreator { 
+//            d_order_id_gen: OrderIdGen::new(),
+//        }
+//    }
+//    
+//    pub fn create_order(&self, order_request: OrderRequest) -> Order {
+//        Order::new(
+//            self.d_order_id_gen.next_id(),
+//            order_request.d_side,
+//            order_request.d_price,
+//            order_request.d_quantity,
+//            order_request.d_order_type,
+//        )
+//    } 
+//}
+//
+//
+///// Generates the ids
+//struct OrderIdGen {
+//    d_counter: AtomicU64,
+//}
+//
+//impl OrderIdGen {
+//    pub fn new() -> Self {
+//        OrderIdGen {
+//            d_counter: AtomicU64::new(0),
+//        }
+//    }
+//
+//    pub fn next_id(&self) -> u64 {
+//        self.d_counter.fetch_add(1, Ordering::SeqCst)
+//    }
+//}
+//
 /// The client creates an instance of this struct in order to create
 /// an order.
 /// The client has to specify a Side, a price and a quantity
@@ -67,11 +68,11 @@ pub struct OrderRequest {
 }
 
 impl OrderRequest {
-    pub fn new(side: Side, price: u32, quantity: u32, order_type: OrderType) -> Result<OrderRequest, LogicError> {
+    pub fn new(side: Side, price: u32, quantity: u32, order_type: OrderType) -> Result<OrderRequest, SimError> {
         Self::valid(side, price, quantity, order_type)
     }
 
-    pub fn market_order_request(side: Side, quantity: u32) -> Result<OrderRequest, LogicError> {
+    pub fn market_order_request(side: Side, quantity: u32) -> Result<OrderRequest, SimError> {
         Ok(
             OrderRequest {
                 d_side: side,
@@ -82,7 +83,7 @@ impl OrderRequest {
         )
     }
 
-    fn valid(side: Side, price: u32, quantity: u32, order_type: OrderType) -> Result<OrderRequest, LogicError> {
+    fn valid(side: Side, price: u32, quantity: u32, order_type: OrderType) -> Result<OrderRequest, SimError> {
         
        
         Ok(OrderRequest {
@@ -96,4 +97,20 @@ impl OrderRequest {
     pub fn request(&self) -> (Side, u32, u32, OrderType) {
         (self.d_side.clone(), self.d_price, self.d_quantity, self.d_order_type.clone())
     }
+}
+
+fn order_id() -> u64 {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    COUNTER.fetch_add(1, Ordering::Relaxed)
+}
+
+pub async fn create_order(order_request: OrderRequest) -> Order {
+
+    Order::new(
+        order_id(),
+        order_request.d_side,
+        order_request.d_price,
+        order_request.d_quantity,
+        order_request.d_order_type,
+    )
 }

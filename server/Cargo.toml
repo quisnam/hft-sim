@@ -1,0 +1,11 @@
+[package]
+name = "server"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+orderbook = { path = "../simple-orderbook/"}
+tokio = { version = "1", features = ["full"]}
+async-trait = "0.1"
+bytes = "1"
+futures = "0.3"

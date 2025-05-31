@@ -1,6 +1,7 @@
 use std::fmt;
 
-use crate::LogicError;
+
+use crate::SimError;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Side {
@@ -106,9 +107,9 @@ impl Order {
         self.d_order_type.clone()
     }
 
-    pub fn invalidate(&mut self) -> Result<(), LogicError> {
+    pub fn invalidate(&mut self) -> Result<(), SimError> {
         if !self.d_valid {
-            Err(LogicError::CancelationError)
+            Err(SimError::CancelationError)
         } else {
             self.d_valid = false;
             Ok(())
@@ -124,6 +125,15 @@ impl Order {
     // fills the order partially
     pub fn fill(&mut self, quantity: &u32) {
         self.d_remaining_quantity -= quantity;
+    }
+
+    pub fn trade_info(&self) -> (u64, u32, u32, Side) {
+        (
+            self.d_id,
+            self.d_remaining_quantity,
+            self.d_price,
+            self.d_side.clone(),
+        )
     }
 
 }
