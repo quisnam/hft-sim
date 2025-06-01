@@ -49,7 +49,7 @@ pub enum ProtocolError {
     ContentError(String),
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct TradeNotification {
     pub d_order_id: u64,
     pub d_counter_party: Option<u64>,

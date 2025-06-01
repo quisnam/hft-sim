@@ -60,11 +60,23 @@ use super::OrderType;
 /// The client creates an instance of this struct in order to create
 /// an order.
 /// The client has to specify a Side, a price and a quantity
+#[derive(Clone, Debug)]
 pub struct OrderRequest {
     d_side: Side,
     d_price: u32,
     d_quantity: u32,
     d_order_type: OrderType,
+}
+
+impl std::fmt::Display for OrderRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        
+        write!(
+            f,
+            "OrderType: {:?}\nSide: {:?}\nQuantity: {}\nPrice: {}",
+            self.d_order_type, self.d_side, self.d_quantity, self.d_price
+        )
+}
 }
 
 impl OrderRequest {
@@ -104,7 +116,7 @@ fn order_id() -> u64 {
     COUNTER.fetch_add(1, Ordering::Relaxed)
 }
 
-pub async fn create_order(order_request: OrderRequest) -> Order {
+pub fn create_order(order_request: OrderRequest) -> Order {
 
     Order::new(
         order_id(),

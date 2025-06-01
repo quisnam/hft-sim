@@ -7,12 +7,10 @@ use orderbook::order_creator::create_order;
 
 use tokio::{
     io::{
-        AsyncWriteExt,
-        AsyncReadExt,
+        AsyncReadExt, AsyncWriteExt
     },
     net::{
-        TcpStream,
-        TcpListener,
+        TcpListener, TcpSocket, TcpStream
     },
     time::{
         sleep,
@@ -51,17 +49,28 @@ impl TradingServer {
     pub async fn run(server: Arc<TradingServer>) {
         let listener = TcpListener::bind("127.0.0.1:8080").await.unwrap();
 
+
+        //let socket = TcpSocket::new_v4().expect("Err");
+        //socket.set_reuseaddr(true).expect("Err2");
+        //socket.bind("127.0.0.1:6669".parse().unwrap()).expect("Err3");
+
+        //let listener = socket.listen(1024).expect("err4");
+        ////let listener = TcpListener::bind("127.0.0.1:6669").await.unwrap();
+
         // Spawn shutdown timer
-        let shutdown_server = Arc::clone(&server);
-        tokio::spawn(async move {
-            sleep(Duration::from_secs(300)).await; // 5 minutes = 300 seconds
-            shutdown_server.shutdown().await;
-            shutdown_server.d_trade_processor.abort();
-        });
+        //let shutdown_server = Arc::clone(&server);
+        //tokio::spawn(async move {
+        //    sleep(Duration::from_secs(300)).await; // 5 minutes = 300 seconds
+        //    shutdown_server.shutdown().await;
+        //    shutdown_server.d_trade_processor.abort();
+        //});
+
+
         loop {
             let (socket, _) = listener.accept().await.unwrap();
             let server = Arc::clone(&server);
     
+            eprintln!("Client connected");
             tokio::spawn(async move {
                 // Create per-client resources
                 let (client_tx, client_rx) = mpsc::channel(32);
@@ -75,6 +84,7 @@ impl TradingServer {
     
                 // Cleanup
                 server_backup.unregister_client(client_id).await;
+                eprintln!("Client_disconnected");
             });
         }
 
@@ -94,15 +104,22 @@ impl TradingServer {
         while connection_active {
             tokio::select! {
                 order_result = Self::read_orders(&mut reader) => {
+                    eprintln!("read  orders");
                     match order_result {
                         Ok((valid_orders, invalid_orders)) => {
+                            eprintln!("received order");
 
                             Self::process_orders(Arc::clone(&server), valid_orders).await;
                             let _ = Self::confirm_orders(&mut writer, invalid_orders).await;
                         }
-                        Err(e) if e.is_fatal() => connection_active =  false,
+                        Err(e) if e.is_fatal() => {
+                            connection_active =  false;
+                            Self::send_error(&mut writer, e).await?;
+                            eprintln!("is_fatal");
+                        },
                         Err(e) => {
-                            Self::send_error(&mut writer,  e).await?;
+                            eprintln!("not fatal");
+                            Self::send_error(&mut writer, e).await?;
                         }
                     }
                 }
@@ -148,18 +165,26 @@ impl TradingServer {
     }
 
     async fn process_orders(server: Arc<TradingServer>, order_request:  Vec<OrderRequest>) {
-        for order in order_request {
-            let _ = server.d_orderbook.write().await.add_order(create_order(order).await).await;
+        let mut orderbook_lk = server.d_orderbook.write().await;
+        for request in order_request {
+            eprintln!("{:?}", request);
+            let order = create_order(request);
+            eprintln!("order created");
+            let _ = orderbook_lk.add_order(order).await;
         }
+
+        eprintln!("Added orders to orderbook");
     }
 
     async fn read_orders(reader: &mut tokio::io::ReadHalf<tokio::net::TcpStream>) -> Result<(Vec<OrderRequest>, Vec<u32>), ProtocolError> {
+        eprintln!("Reading orders");
+
         let mut len_buf = [0u8; 16];
         let _ = reader.read_exact(&mut len_buf).await;
         if len_buf[4] != 0xFF && len_buf[5] != 0xFF {
             return Err(ProtocolError::ContentError("Missing seperator".to_string()));
         }
-        let message_len: u32 = u32::from_le_bytes(len_buf[0..4].try_into().unwrap());
+        let mut message_len: u32 = u32::from_le_bytes(len_buf[0..4].try_into().unwrap());
         let order_amount = u32::from_le_bytes(len_buf[6..10].try_into().unwrap());
         
         if message_len as usize > MAX_MESSAGE_SIZE {
@@ -170,9 +195,15 @@ impl TradingServer {
             return Err(ProtocolError::ContentError("Invalid CRC for header".to_string()));
         }
 
+        message_len -= 16; // already read  16 bytes
+
 
         let mut buffer = vec![0u8; message_len as usize];
+
+        eprintln!("creating buffer");
+        eprintln!("Message length is: {}", message_len);
         reader.read_exact(&mut buffer).await?;
+        eprintln!("read buffer");
         deserialize_stream(&buffer, order_amount)
 
     }
@@ -198,9 +229,9 @@ impl TradingServer {
         orderbook: Arc<RwLock<OrderBook>>,
         logger: Arc<dyn TradeLogger>,
     ) {
-        {
-            orderbook.write().await.lazy_deletion().await;
-        }
+        //{
+        //    orderbook.write().await.lazy_deletion().await;
+        //}
         while let Some(trade) = trade_rx.recv().await {
             // 1. Notify clients
             let clients_read = clients.read().await;

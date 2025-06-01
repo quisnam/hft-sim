@@ -7,6 +7,7 @@ use super::{
     MAX_MESSAGE_SIZE,
 };
 
+// is fatal for the connection -> it is closed
 impl ProtocolError {
     pub fn is_fatal(&self) -> bool {
         match self {
@@ -28,6 +29,7 @@ impl fmt::Display for ProtocolError {
     }
 }
 
+
 impl std::error::Error for ProtocolError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
@@ -46,11 +48,3 @@ impl From<io::Error> for ProtocolError {
 // Ensure thread safety
 unsafe impl Send for ProtocolError {}
 unsafe impl Sync for ProtocolError {}
-
-// #[derive(Serialize)]
-// pub struct ErrorResponse {
-//     code: u16,
-//     message: String,
-//     #[serde(skip_serializing_if = "Option::is_none")]
-//     request_id: Option<u64>,
-// }

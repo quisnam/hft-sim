@@ -64,46 +64,37 @@ impl OrderBook {
 
             // Clean asks
             for asks in self.d_asks.values_mut() {
-                asks.retain(|order| {
-                    let valid = tokio::task::block_in_place(|| {
-                        let rt = tokio::runtime::Handle::current();
-                        rt.block_on(async {
-                            order.read().await.valid()
-                        })
-                    });
-                    if !valid {
-                        let id = tokio::task::block_in_place(|| {
-                            let rt = tokio::runtime::Handle::current();
-                            rt.block_on(async {
-                                order.read().await.id()
-                            })
-                        });
-                        self.d_orders.remove(&id);
+                eprintln!("asks before cleaning: {}", asks.len());
+                let mut pops: u32 = 0;
+                for ask in asks.iter_mut() {
+                    if !ask.read().await.valid() {
+                        pops += 1;
                     }
-                    valid
-                });
+                }
+                for _ in 0..pops {
+                    let id = asks.pop_front().unwrap().read().await.id();
+                    asks.remove(id as usize);
+
+                }
+                eprintln!("asks after cleaning:  {}", asks.len());
             }
 
             // Clean bids
             for bids in self.d_bids.values_mut() {
-                bids.retain(|order| {
-                    let valid = tokio::task::block_in_place(|| {
-                        let rt = tokio::runtime::Handle::current();
-                        rt.block_on(async {
-                            order.read().await.valid()
-                        })
-                    });
-                    if !valid {
-                        let id = tokio::task::block_in_place(|| {
-                            let rt = tokio::runtime::Handle::current();
-                            rt.block_on(async {
-                                order.read().await.id()
-                            })
-                        });
-                        self.d_orders.remove(&id);
+                eprintln!("bids before cleaning:  {}", bids.len());
+                let mut pops: u32 = 0;
+                for bid in bids.iter_mut() {
+                    if !bid.read().await.valid() {
+                        pops += 1;
                     }
-                    valid
-                });
+                }
+                for _ in 0..pops  {
+                    let id  = bids.pop_front().unwrap().read().await.id();
+                    bids.remove(id as usize);
+                }
+
+
+
             }
         }
     }
@@ -158,18 +149,24 @@ impl OrderBook {
 
                 let mut available_quantity = 0;
 
+                if price > *highest_price {
+                    return false;
+                }
                 for (p, orders) in self.d_bids.range(price..=*highest_price) {
+                    if quantity < available_quantity {
+                        break;
+                    }
                     if self.d_bids_level_info.get_count(*p) > 0 {
                         for order in orders {
                             let order_lk = order.read().await;
                             if order_lk.valid() {
-                                available_quantity += order_lk.remaining_quantity() as u64;
+                                available_quantity += order_lk.remaining_quantity();
                             }
                         }
                     }
                 }
 
-                available_quantity > quantity as u64
+                available_quantity > quantity
             }
 
             Side::Buy => {
@@ -179,18 +176,25 @@ impl OrderBook {
 
                 let mut available_quantity = 0;
 
+                if *lowest_price > price  {
+                    return false;
+                }
+
                 for (p, orders) in self.d_asks.range(*lowest_price..=price) {
+                    if quantity < available_quantity {
+                        break;
+                    }
                     if self.d_asks_level_info.get_count(*p) > 0 {
                         for order in orders {
                             let order_lk = order.read().await;
                             if order_lk.valid() {
-                                available_quantity += order_lk.remaining_quantity() as u64;
+                                available_quantity += order_lk.remaining_quantity();
                             }
                         }
                     }
                 }
 
-                available_quantity > quantity as u64
+                available_quantity > quantity
             }
         }
     }
@@ -199,6 +203,19 @@ impl OrderBook {
     async fn immediate_buy_order(&mut self, order: &mut Order) -> TradeInfo {
         let mut trade_info = TradeInfo::new();
         let max_price = order.price();
+
+        // in case there are no asks with a lower ask
+        match self.d_asks.first_key_value() {
+            Some((lowest_ask, _)) => {
+                if *lowest_ask < max_price{
+
+                }
+            }
+            _ => {
+                return TradeInfo::new();
+            }
+        }
+        
         for  (price, asks) in self.d_asks.range_mut(..=max_price) {
             if order.remaining_quantity() == 0 {
                 break;
@@ -212,6 +229,18 @@ impl OrderBook {
     async fn immediate_sell_order(&mut self, order: &mut Order) -> TradeInfo {
         let mut trade_info = TradeInfo::new();
         let lowest_ask = order.price();
+
+        // in case there are no bids with a higher bid
+        match self.d_bids.last_key_value() {
+            Some((highest_price, _)) => {
+                if lowest_ask <  *highest_price {
+
+                }
+            }
+            _ => {
+                return TradeInfo::new();
+            },
+        }
         
         for (price, bid) in self.d_bids.range_mut(lowest_ask..) {
             if order.remaining_quantity() == 0 {
@@ -232,6 +261,8 @@ impl OrderBook {
     // Add a new OrderRequest
     pub async fn add_order(&mut self, mut order: Order) {
         // create order request and save parameters for easier access in the future
+        eprintln!("Total orders in orderbook: {}\nIn asks: {}\nIn bids: {}", self.d_orders.len(), self.d_asks.len(), self.d_bids.len());
+
         let order_id = order.id();
         let order_price = order.price();
         let order_type = order.order_type();
@@ -245,53 +276,50 @@ impl OrderBook {
                 if self.can_match_fully(&order).await {
                      _trade_info = self.execute_trade_immediately(&mut order).await;
                 }
-            }
-            _ => if self.can_match(&order) {
-                    _ = self.execute_trade_immediately(&mut order).await;
-                }
+            },
+            _ => {
+                _trade_info = self.execute_trade_immediately(&mut order).await;
+            },
         }
-        
 
         let rem_quan = order.remaining_quantity();
 
-        let order = Arc::new(RwLock::new(order));
-
-        if self.d_orders.insert(order_id, Arc::clone(&order)).is_some() {
-            let _ = self.d_trades_queue.send(Trades::error(SimError::KeyOverflow)).await;
-            
-        };
-
-        if order_type == OrderType::FillAndKill || order_type == OrderType::FillOrKill {
-            match _trade_info.is_empty() {
-                true => _ = self.d_trades_queue.send(Trades::error(SimError::NoMatchFound)).await,
-                false => { },
+        if order_type == OrderType::FillOrKill || order_type  == OrderType::FillAndKill {
+            if _trade_info.is_empty() {
+                let _ = self.d_trades_queue.send(Trades::error(SimError::NoMatchFound)).await;
             }
-
             return;
-
         }
 
-        let price_levels = match order.read().await.side() {
+
+        let order_arc = Arc::new(RwLock::new(order));
+        if self.d_orders.insert(order_id, Arc::clone(&order_arc)).is_some() {
+            let _ = self.d_trades_queue.send(Trades::error(SimError::KeyOverflow)).await;
+        };
+
+
+
+
+        let price_levels = match side {
             Side::Buy => &mut self.d_bids,
             Side::Sell => &mut self.d_asks,
         };
 
-        price_levels
-            .entry(order.read().await.price())
-            .or_insert_with(VecDeque::new)
-            .push_back(Arc::clone(&order));
-        
         // If the order has been fulfilled it will not be added to the orders
-        // waiting to be executed. However, it is still inserted so the trade can be
-        // logged
+        // waiting to be executed.
         if rem_quan != 0 {
             match side {
                 Side::Buy => self.d_bids_level_info.increment(order_price),
                 Side::Sell => self.d_asks_level_info.increment(order_price),
             }
+
+            price_levels
+                .entry(order_price)
+                .or_insert_with(VecDeque::new)
+                .push_back(Arc::clone(&order_arc));
+
         }
-        
-        
+
     }
 
     pub async fn display_ob(&self) {
@@ -306,16 +334,47 @@ impl OrderBook {
     pub async fn cancel_order(&mut self, id: u64) ->  Result<(), SimError> {
         match self.d_orders.get(&id) {
             Some(order) => {
-                let mut order_lk = order.write().await;
-                match order_lk.side() {
-                    Side::Sell => self.d_asks_level_info.decrement(order_lk.price()),
-                    Side::Buy => self.d_bids_level_info.decrement(order_lk.price()),
+                let order_lk = order.read().await;
+                let side =  order_lk.side();
+                let price = order_lk.price();
+                
+                drop(order_lk);
+                match side {
+                    Side::Sell => {
+                        self.d_asks_level_info.decrement(price);
+                        
+                        if let Some(queue) = self.d_asks.get_mut(&price) {
+                            Self::remove_order_from_price_level(queue, &id).await;
+                        }
+                    },
+
+                    Side::Buy => {
+                        self.d_bids_level_info.decrement(price);
+                        
+                        if let Some(queue) = self.d_bids.get_mut(&price) {
+                            Self::remove_order_from_price_level(queue, &id).await;
+                        }
+                    },
                     
                 }
-                order_lk.invalidate()?;
+                self.d_orders.remove(&id);
                 Ok(())
             },
             None => Err(SimError::CancelationError),
         }
+    }
+
+    async fn remove_order_from_price_level(price_level: &mut VecDeque<Arc<RwLock<Order>>>, order_id: &u64) {
+        
+        price_level.retain(|order| {
+            let curr_id = tokio::task::block_in_place(|| {
+                let rt = tokio::runtime::Handle::current();
+                rt.block_on(async {
+                    order.read().await.id()
+                })
+            });
+            curr_id == *order_id
+        });
+
     }
 }

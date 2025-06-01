@@ -10,6 +10,7 @@ use std::{
 /// d_prices: a vector of the prices that an order matched
 /// d_total: the total price paid/money gained from the given order
 /// d_quantity: the the d_quantity bought/sold
+#[derive(Debug)]
 pub struct TradeInfo {
     pub d_prices: Vec<u32>,
     pub d_total: u32,

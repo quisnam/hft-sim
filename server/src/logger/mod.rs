@@ -6,6 +6,8 @@ use async_trait::async_trait;
 use super::Trades;
 
 
+/// Logging all executed trades.
+
 #[async_trait]
 pub trait TradeLogger: Send + Sync {
     async fn log(&self, trade: &Trades);

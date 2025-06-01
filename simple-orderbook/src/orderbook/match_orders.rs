@@ -27,7 +27,9 @@ pub async fn match_order_and_price_level(
         return ;
     }
 
-    for bid in price_level {
+    let mut pops = 0;
+
+    for bid in &mut *price_level {
         // The quantity of the order is exhausted
         if order.remaining_quantity() == 0 {
             break;
@@ -94,6 +96,14 @@ pub async fn match_order_and_price_level(
                 order.fill_all();
             }
         }
+        eprintln!("{:?}", trade_info);
+        if !bid.read().await.valid() {
+            pops += 1;
+        }
+    }
+
+    for _ in 0..pops {
+        price_level.pop_front();
     }
 }
 
@@ -103,6 +113,7 @@ pub async fn fill_trade(
     current_order: (u64, u32, u32, Side),
     matching_order: (u64, u32, u32, Side),
 ) {
+    eprintln!("Match");
     let (curr_id, curr_qty, curr_price, curr_side) = current_order;
     let (match_id, match_qty, _, _) = matching_order;
 
