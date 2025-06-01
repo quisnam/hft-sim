@@ -18,6 +18,8 @@ use orderbook::{
 
 use futures::future::AbortHandle;
 
+use dashmap::DashMap;
+
 pub mod error;
 pub mod server_client_com;
 pub mod trade_notification;
@@ -39,6 +41,8 @@ pub struct TradingServer {
 
     d_client_registry: Arc<RwLock<HashMap<u64, mpsc::Sender<TradeNotification>>>>,
 
+    d_order_id_to_client_id: Arc<DashMap<u64, u64>>,
+
     d_trade_processor: AbortHandle,
 }
 
@@ -47,6 +51,8 @@ pub enum ProtocolError {
     Io(io::Error),
     MessageTooLarge(usize),
     ContentError(String),
+    ConnectionClosed,
+    Timeout,
 }
 
 #[derive(Clone, PartialEq, Eq)]

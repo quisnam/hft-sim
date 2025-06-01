@@ -3,18 +3,22 @@ use crate::logger::{
     TradeLogger, FileTradeLogger,
 };
 
-use orderbook::order_creator::create_order;
+use orderbook::{
+    //order,
+    order_creator::create_order
+};
 
 use tokio::{
     io::{
         AsyncReadExt, AsyncWriteExt
     },
     net::{
-        TcpListener, TcpSocket, TcpStream
+        TcpListener, TcpStream
     },
     time::{
-        sleep,
+        //sleep,
         Duration,
+        timeout,
     }
 };
 
@@ -26,12 +30,13 @@ impl TradingServer {
         let (trade_tx, trade_rx) = mpsc::channel(100);
         let orderbook = Arc::new(RwLock::new(OrderBook::new(trade_tx)));
         let clients = Arc::new(RwLock::new(HashMap::new()));
+        let order_to_client = Arc::new(DashMap::new());
         let logger = Arc::new(FileTradeLogger::new("trades.log").await.unwrap());
 
 
         let (abort_handle,  abort_registration) = AbortHandle::new_pair();
         let task = Abortable::new(
-            Self::process_trades(trade_rx, Arc::clone(&clients), Arc::clone(&orderbook), logger)
+            Self::process_trades(trade_rx, Arc::clone(&clients), Arc::clone(&orderbook), logger, Arc::clone(&order_to_client))
             , abort_registration);
         
         tokio::spawn(task);
@@ -40,6 +45,7 @@ impl TradingServer {
             d_orderbook: orderbook,
             d_client_registry: clients,
             d_trade_processor: abort_handle,
+            d_order_id_to_client_id: Arc::clone(&order_to_client),
         }
 
     }
@@ -48,14 +54,6 @@ impl TradingServer {
     
     pub async fn run(server: Arc<TradingServer>) {
         let listener = TcpListener::bind("127.0.0.1:8080").await.unwrap();
-
-
-        //let socket = TcpSocket::new_v4().expect("Err");
-        //socket.set_reuseaddr(true).expect("Err2");
-        //socket.bind("127.0.0.1:6669".parse().unwrap()).expect("Err3");
-
-        //let listener = socket.listen(1024).expect("err4");
-        ////let listener = TcpListener::bind("127.0.0.1:6669").await.unwrap();
 
         // Spawn shutdown timer
         //let shutdown_server = Arc::clone(&server);
@@ -73,15 +71,23 @@ impl TradingServer {
             eprintln!("Client connected");
             tokio::spawn(async move {
                 // Create per-client resources
-                let (client_tx, client_rx) = mpsc::channel(32);
+                let (client_tx, client_rx) = mpsc::channel(6);
                 let client_id = server.register_client(client_tx).await;
     
                 let server_backup = Arc::clone(&server);
                 // Handle connection
-                if let Err(e) = Self::handle_connection(socket, server, client_rx).await {
+                //match Self::handle_connection(socket, server, client_rx, client_id).await {
+                //    Ok((mut writer, client_rx)) =>  {
+                //        if let Err(e) = Self::client_notification(&mut writer, client_rx).await {
+                //            eprintln!("Error:  {}", e);
+                //        }
+                //    },
+                //    Err(e) => eprintln!("Client {} error: {}", client_id, e),
+                //}
+                if let Err(e) = Self::handle_connection(socket, server, client_rx, client_id).await {
                     eprintln!("Client {} error: {}", client_id, e);
                 }
-    
+                    
                 // Cleanup
                 server_backup.unregister_client(client_id).await;
                 eprintln!("Client_disconnected");
@@ -89,28 +95,49 @@ impl TradingServer {
         }
 
     }
+    
+    #[allow(dead_code)]
+    async fn client_notification(
+        writer: &mut tokio::io::WriteHalf<tokio::net::TcpStream>,
+        mut relay_trade_notifications_rx: mpsc::Receiver<TradeNotification>,
+    ) -> Result<(), ProtocolError> 
+    {
 
+        while let Some(trade_notification) = relay_trade_notifications_rx.recv().await {
+            Self::send_notification(writer, trade_notification).await?;
+        }
 
-
+        Ok(())
+    }
     
     async fn handle_connection(
         socket: TcpStream,
         server: Arc<TradingServer>,
         mut client_rx: mpsc::Receiver<TradeNotification>,
-    ) -> Result<(), ProtocolError> {
+        client_id: u64
+    )
+    //) -> Result<
+    //    (
+    //        tokio::io::WriteHalf<tokio::net::TcpStream>,
+    //        mpsc::Receiver<TradeNotification>,
+    //    ), ProtocolError> 
+        -> Result<(), ProtocolError>
+    {
         let (mut reader, mut writer) = tokio::io::split(socket);
         let mut connection_active = true;
     
         while connection_active {
             tokio::select! {
                 order_result = Self::read_orders(&mut reader) => {
-                    eprintln!("read  orders");
                     match order_result {
                         Ok((valid_orders, invalid_orders)) => {
-                            eprintln!("received order");
+                            eprintln!("Received orders");
 
-                            Self::process_orders(Arc::clone(&server), valid_orders).await;
-                            let _ = Self::confirm_orders(&mut writer, invalid_orders).await;
+                            Self::process_orders(Arc::clone(&server), valid_orders, client_id).await;
+
+                            if invalid_orders.is_empty()  {
+                                let _ = Self::confirm_orders(&mut writer, invalid_orders).await;
+                            }
                         }
                         Err(e) if e.is_fatal() => {
                             connection_active =  false;
@@ -125,6 +152,7 @@ impl TradingServer {
                 }
     
                 recv_result = client_rx.recv() => {
+                    eprintln!("Sending in handle_connection");
                     match recv_result {
                         Some(notification) => {
                             Self::send_notification(&mut writer, notification).await?;
@@ -136,8 +164,11 @@ impl TradingServer {
                 },
             }
         }
+        eprintln!("orders in orderbook: {}", server.d_orderbook.read().await.len());
     
+
         Ok(())
+        // Ok((writer, client_rx))
     }
 
 
@@ -164,13 +195,16 @@ impl TradingServer {
         Ok(())
     }
 
-    async fn process_orders(server: Arc<TradingServer>, order_request:  Vec<OrderRequest>) {
+    async fn process_orders(server: Arc<TradingServer>, order_request:  Vec<OrderRequest>, client_id: u64) {
         let mut orderbook_lk = server.d_orderbook.write().await;
-        for request in order_request {
-            eprintln!("{:?}", request);
+
+        eprintln!("{}", order_request.len());
+        for (i, request) in order_request.into_iter().enumerate() {
+            eprintln!("{}-th order is prepared", i);
             let order = create_order(request);
-            eprintln!("order created");
-            let _ = orderbook_lk.add_order(order).await;
+            let id = orderbook_lk.add_order(order).await;
+            server.d_order_id_to_client_id.insert(id, client_id);
+            eprintln!("{}th order was added", i)
         }
 
         eprintln!("Added orders to orderbook");
@@ -180,7 +214,22 @@ impl TradingServer {
         eprintln!("Reading orders");
 
         let mut len_buf = [0u8; 16];
-        let _ = reader.read_exact(&mut len_buf).await;
+        
+
+        let n = timeout(Duration::from_secs(2), reader.read_exact(&mut len_buf)).await;
+
+        match n {
+            Ok(Ok(16)) => {  },
+            Ok(Ok(_)) => {
+                return Err(ProtocolError::ContentError("Header too short".to_string()));
+            },
+            Ok(Err(e)) => {
+                return Err(ProtocolError::Io(e));
+            },
+
+            Err(_) => return Err(ProtocolError::Timeout),
+        }
+
         if len_buf[4] != 0xFF && len_buf[5] != 0xFF {
             return Err(ProtocolError::ContentError("Missing seperator".to_string()));
         }
@@ -200,19 +249,17 @@ impl TradingServer {
 
         let mut buffer = vec![0u8; message_len as usize];
 
-        eprintln!("creating buffer");
         eprintln!("Message length is: {}", message_len);
         reader.read_exact(&mut buffer).await?;
-        eprintln!("read buffer");
-        deserialize_stream(&buffer, order_amount)
 
+        deserialize_stream(&buffer, order_amount)
     }
 
     async fn send_notification(
         writer: &mut tokio::io::WriteHalf<tokio::net::TcpStream>,
         notification: TradeNotification,
     ) -> Result<(), ProtocolError> {
-
+        eprintln!("Sending in send_notification");
         let mut buffer = [0; 32];
         let bytes = serialize_trade_notification(&notification, &mut buffer);
 
@@ -228,31 +275,45 @@ impl TradingServer {
         clients: Arc<RwLock<HashMap<u64, mpsc::Sender<TradeNotification>>>>,
         orderbook: Arc<RwLock<OrderBook>>,
         logger: Arc<dyn TradeLogger>,
+        order_to_client: Arc<DashMap<u64, u64>>,
     ) {
         //{
         //    orderbook.write().await.lazy_deletion().await;
         //}
         while let Some(trade) = trade_rx.recv().await {
             // 1. Notify clients
-            let clients_read = clients.read().await;
-            if let Some(buyer_tx) = clients_read.get(&trade.buyer()) {
-                let _ = buyer_tx.send(TradeNotification::from_trade(&trade, true)).await;
-            }
-            if let Some(seller_tx) = clients_read.get(&trade.seller()) {
-                let _ = seller_tx.send(TradeNotification::from_trade(&trade, false)).await;
-            }
-            drop(clients_read); // Explicitly release lock
-    
-            // 2. Cleanup orders
-            {
-                if trade.buyer_filled() {
-                    clients.write().await.remove(&trade.buyer());
-                }
+            let clients_lk = clients.read().await;
+            eprintln!("sending in process_trades");
 
-                if trade.seller_filled() {
-                    clients.write().await.remove(&trade.seller());
+            if let Some(buyer_id) = order_to_client.get(&trade.buyer()) {
+                if let Some(buyer_tx) = clients_lk.get(&buyer_id) {
+                    let _ = buyer_tx.send(TradeNotification::from_trade(&trade, true)).await;
                 }
-            } // Lock automatically released here
+            }
+
+            if let Some(seller_id) = order_to_client.get(&trade.seller()) {
+                if let Some(seller_tx) = clients_lk.get(&seller_id) {
+                    let _ = seller_tx.send(TradeNotification::from_trade(&trade, false)).await;
+                }
+            }
+
+            drop(clients_lk);
+
+            {
+                let mut ob_lk = orderbook.write().await;
+                if trade.seller_filled() {
+                    ob_lk.remove(&trade.seller());
+                    order_to_client.remove(&trade.seller());
+                }
+                if trade.buyer_filled() {
+                    ob_lk.remove(&trade.buyer());
+                    order_to_client.remove(&trade.buyer());
+                }
+            }
+
+            if trade.price() == 0 && trade.quantity() == 0 {
+                continue;
+            }
     
             // 3. Log trade
             logger.log(&trade).await;
@@ -270,34 +331,7 @@ impl TradingServer {
         self.d_client_registry.write().await.remove(&client);
     }
 
-    // async fn map_clients_to_trade(&self, trade: &Trades) {
-    //     let clients = self.d_client_registry.read().await;
-
-    //     let buyer_notification = TradeNotification {
-    //         d_order_id: trade.buyer(),
-    //         d_counter_party: Some(trade.seller()),
-    //         d_price: trade.price(),
-    //         d_filled_quantity: trade.quantity(),
-    //         d_fully_filled: trade.buyer_filled(),
-    //     };
-
-    //     let seller_notification = TradeNotification {
-    //         d_order_id: trade.seller(),
-    //         d_counter_party: Some(trade.seller()),
-    //         d_price: trade.price(),
-    //         d_filled_quantity: trade.quantity(),
-    //         d_fully_filled: trade.seller_filled(),
-    //     };
-
-    //     if let Some(sender) = clients.get(&trade.buyer()) {
-    //         let _ = sender.send(buyer_notification.clone()).await;
-    //     }
-
-    //     if let Some(sender) = clients.get(&trade.seller()) {
-    //         let _ = sender.send(seller_notification.clone()).await;
-    //     }
-    // }
-
+    #[allow(dead_code)]
     async fn shutdown(&self) {
         self.d_trade_processor.abort();
         let clients = self.d_client_registry.read().await;

@@ -4,6 +4,7 @@ use tokio::sync::mpsc::Sender;
 pub mod misc;
 mod match_orders;
 
+use std::sync::atomic::{self, AtomicU64};
 use std::time::Duration;
 use std::{
     collections::{
@@ -58,13 +59,21 @@ impl OrderBook {
         }
     }
 
+    pub fn remove(&mut self, order_id: &u64) -> Option<Arc<RwLock<Order>>> {
+        self.d_orders.remove(order_id)
+    }
+
+    pub fn len(&self) -> usize {
+        self.d_orders.len()
+    }
+
     pub async fn lazy_deletion(&mut self) {
         loop {
             sleep(Duration::from_secs(2)).await;
 
             // Clean asks
             for asks in self.d_asks.values_mut() {
-                eprintln!("asks before cleaning: {}", asks.len());
+                // eprintln!("asks before cleaning: {}", asks.len());
                 let mut pops: u32 = 0;
                 for ask in asks.iter_mut() {
                     if !ask.read().await.valid() {
@@ -76,12 +85,12 @@ impl OrderBook {
                     asks.remove(id as usize);
 
                 }
-                eprintln!("asks after cleaning:  {}", asks.len());
+                // eprintln!("asks after cleaning:  {}", asks.len());
             }
 
             // Clean bids
             for bids in self.d_bids.values_mut() {
-                eprintln!("bids before cleaning:  {}", bids.len());
+                // eprintln!("bids before cleaning:  {}", bids.len());
                 let mut pops: u32 = 0;
                 for bid in bids.iter_mut() {
                     if !bid.read().await.valid() {
@@ -141,13 +150,14 @@ impl OrderBook {
         let price = order.price();
         let quantity = order.remaining_quantity();
 
+        let mut available_quantity = 0;
+
         match order.side() {
             Side::Sell => {
                 let Some((highest_price, _)) = self.d_bids.last_key_value() else {
                     return false;
                 };
 
-                let mut available_quantity = 0;
 
                 if price > *highest_price {
                     return false;
@@ -166,7 +176,6 @@ impl OrderBook {
                     }
                 }
 
-                available_quantity > quantity
             }
 
             Side::Buy => {
@@ -174,7 +183,6 @@ impl OrderBook {
                     return false;
                 };
 
-                let mut available_quantity = 0;
 
                 if *lowest_price > price  {
                     return false;
@@ -194,9 +202,9 @@ impl OrderBook {
                     }
                 }
 
-                available_quantity > quantity
             }
         }
+        available_quantity > quantity
     }
     
     // buy 
@@ -259,10 +267,17 @@ impl OrderBook {
     }
 
     // Add a new OrderRequest
-    pub async fn add_order(&mut self, mut order: Order) {
+    pub async fn add_order(&mut self, mut order: Order) -> u64 {
+        // {
+        //     static ATOM: AtomicU64 = AtomicU64::new(0);
+        //     ATOM.fetch_add(1, atomic::Ordering::SeqCst);
+        //     let val = ATOM.load(atomic::Ordering::SeqCst);
+        //     //eprintln!("{}", val)
+        // }
         // create order request and save parameters for easier access in the future
-        eprintln!("Total orders in orderbook: {}\nIn asks: {}\nIn bids: {}", self.d_orders.len(), self.d_asks.len(), self.d_bids.len());
-
+        // eprintln!("Total orders in orderbook: {}\nIn asks: {}\nIn bids: {}", self.d_orders.len(), self.d_asks.len(), self.d_bids.len());
+        
+        eprintln!("add_order called");
         let order_id = order.id();
         let order_price = order.price();
         let order_type = order.order_type();
@@ -284,17 +299,24 @@ impl OrderBook {
 
         let rem_quan = order.remaining_quantity();
 
+        eprintln!("Debug");
+
         if order_type == OrderType::FillOrKill || order_type  == OrderType::FillAndKill {
+            eprintln!("I am here");
             if _trade_info.is_empty() {
-                let _ = self.d_trades_queue.send(Trades::error(SimError::NoMatchFound)).await;
+                // This causes a bug
+                // let _ = self.d_trades_queue.send(Trades::error(SimError::NoMatchFound)).await;
+                eprintln!("good to know");
             }
-            return;
+            eprintln!("otherwise");
+            return order_id;
         }
 
 
+        eprintln!("Debug");
         let order_arc = Arc::new(RwLock::new(order));
         if self.d_orders.insert(order_id, Arc::clone(&order_arc)).is_some() {
-            let _ = self.d_trades_queue.send(Trades::error(SimError::KeyOverflow)).await;
+            // let _ = self.d_trades_queue.send(Trades::error(SimError::KeyOverflow)).await;
         };
 
 
@@ -320,6 +342,7 @@ impl OrderBook {
 
         }
 
+        order_id
     }
 
     pub async fn display_ob(&self) {

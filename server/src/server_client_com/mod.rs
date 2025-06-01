@@ -43,6 +43,7 @@ pub fn serialize_trade_notification<'a>(
     trade_notification: &TradeNotification,
     buffer: &'a mut [u8; 32],
 ) -> &'a [u8; 32] {
+    eprintln!("Serializing");
     buffer[0] = 1;
     buffer[1] = 32;
 
@@ -61,6 +62,7 @@ pub fn serialize_trade_notification<'a>(
     let crc = compute_crc(&buffer[..27]);
 
     buffer[27..31].copy_from_slice(&crc.to_le_bytes());
+    eprintln!("finished serializing");
     buffer
 }
 
@@ -145,10 +147,7 @@ pub fn deserialize_stream(data_stream: &[u8], order_amount: u32) -> Result<(Vec<
         }
         offset += 16;
     }
-    for request in &order_requests {
-        eprintln!("{:?}", request);
-    }
-
+    
     Ok((order_requests, invalid_orders))
 }
 

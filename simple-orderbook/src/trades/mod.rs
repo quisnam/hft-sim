@@ -25,7 +25,7 @@ impl Trades {
     }
 
     pub fn error(error_code: SimError) -> Self {
-        Self {
+        let ret = Self {
             d_seller: 0,
             d_buyer: 0,
             d_quantity: 0,
@@ -33,8 +33,10 @@ impl Trades {
             d_seller_filled: true,
             d_buyer_filled: true,
             d_error_indication: error_code,
-        }
+        };
 
+        eprintln!("error_code returned");
+        ret
     }
 
     pub fn seller(&self) -> u64 {

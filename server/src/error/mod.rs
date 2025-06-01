@@ -13,6 +13,7 @@ impl ProtocolError {
         match self {
             ProtocolError::Io(e) => e.kind() != io::ErrorKind::WouldBlock,
             ProtocolError::MessageTooLarge(_) => false,
+            // ProtocolError::Timeout => false,
             _ => true,
         }
     }
@@ -22,9 +23,10 @@ impl fmt::Display for ProtocolError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ProtocolError::Io(err) => write!(f, "IO error: {}", err),
-            ProtocolError::MessageTooLarge(size) => 
-                write!(f, "Message too large ({} > {})", size, MAX_MESSAGE_SIZE),
+            ProtocolError::MessageTooLarge(size) => write!(f, "Message too large ({} > {})", size, MAX_MESSAGE_SIZE),
             ProtocolError::ContentError(msg) => write!(f, "Content error: {}", msg),
+            ProtocolError::ConnectionClosed => write!(f, "Connection closed"),
+            ProtocolError::Timeout => write!(f, "Timeout"),
         }
     }
 }

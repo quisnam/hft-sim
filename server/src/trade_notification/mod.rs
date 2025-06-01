@@ -9,7 +9,7 @@ impl  TradeNotification {
     }
 
     pub fn from_trade(trade: &Trades, buyer: bool) -> Self {
-        eprintln!("creating TradeNotification");
+        // eprintln!("creating TradeNotification");
         match buyer {
             true => TradeNotification {
                 d_order_id: trade.buyer(),
