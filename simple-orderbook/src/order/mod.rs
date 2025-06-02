@@ -1,13 +1,13 @@
 use std::fmt;
 
+use crate::{
+    SimError,
+    Side,
+    OrderType,
+    Order,
+};
 
-use crate::SimError;
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Side {
-    Buy,
-    Sell,
-}
+pub mod order_creator;
 
 impl fmt::Display for Side {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -19,34 +19,7 @@ impl fmt::Display for Side {
 }
 
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum OrderType {
-    GoodTillCancel,
-    FillAndKill,
-    FillOrKill,
-    Market,
-}
 
-pub mod order_creator;
-
-/// Order struct
-/// d_id: unique identifier,
-/// d_side: Buy/Sell order,
-/// price: max/min price,
-/// d_initial_quantity,
-/// d_remaining_quantity: quantity that remains to be fulfilled
-/// d_valid: is the order valid? Needed for cancelations and 
-/// fulfilled orders that are to be removed (lazy)
-#[derive(PartialEq, Eq)]
-pub struct Order {
-    d_id: u64,
-    d_side: Side,
-    d_price: u32,
-    d_initial_quantity: u32,
-    d_remaining_quantity: u32,
-    d_valid: bool,
-    d_order_type: OrderType,
-}
 
 impl Order {
     pub fn new(id: u64, side: Side, price: u32, quantity: u32, order_type: OrderType) -> Self {

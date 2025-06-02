@@ -1,3 +1,8 @@
+use crate::{
+    TradeInfo,
+    PriceLevelInfo,
+};
+
 use std::{
     sync::atomic::{
         AtomicU64,
@@ -6,16 +11,6 @@ use std::{
     collections::HashMap,
 };
 
-/// Struct to encapsulate:
-/// d_prices: a vector of the prices that an order matched
-/// d_total: the total price paid/money gained from the given order
-/// d_quantity: the the d_quantity bought/sold
-#[derive(Debug)]
-pub struct TradeInfo {
-    pub d_prices: Vec<u32>,
-    pub d_total: u32,
-    pub d_quantity: u32,
-}
 
 impl Default for TradeInfo {
     fn default() -> Self {
@@ -34,15 +29,6 @@ impl TradeInfo {
     }
 }
 
-/// Struct to encapsulate:
-/// d_level_info: a HashMap mapping an u32 to an AtomicU64
-/// key: a price,
-/// value: the amount of valid orders at that price
-///
-/// uses lock-free updates to the HashMap
-pub struct PriceLevelInfo {
-    d_level_info: HashMap<u32, AtomicU64>,
-}
 
 impl Default for PriceLevelInfo {
     fn default() -> Self {

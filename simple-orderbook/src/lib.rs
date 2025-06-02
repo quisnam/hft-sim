@@ -2,8 +2,22 @@ pub mod order;
 pub mod trades;
 pub mod orderbook;
 
-pub use crate::trades::*;
-pub use crate::orderbook::*;
+use std::{
+    sync::{
+        Arc,
+        atomic::AtomicU64,
+    },
+    collections::{
+        HashMap,
+        BTreeMap,
+        VecDeque,
+    }
+};
+
+use tokio::sync::{
+    RwLock,
+    mpsc::Sender,
+};
 
 #[derive(Debug)]
 
@@ -14,6 +28,101 @@ pub enum SimError {
     CancelationError,
     None,
     NoMatchFound,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Side {
+    Buy,
+    Sell,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OrderType {
+    GoodTillCancel,
+    FillAndKill,
+    FillOrKill,
+    Market,
+}
+
+
+#[derive(Clone, Debug)]
+pub struct OrderRequest {
+    d_side: Side,
+    d_price: u32,
+    d_quantity: u32,
+    d_order_type: OrderType,
+}
+
+/// Order struct
+/// d_id: unique identifier,
+/// d_side: Buy/Sell order,
+/// price: max/min price,
+/// d_initial_quantity,
+/// d_remaining_quantity: quantity that remains to be fulfilled
+/// d_valid: is the order valid? Needed for cancelations and 
+/// fulfilled orders that are to be removed (lazy)
+#[derive(PartialEq, Eq)]
+pub struct Order {
+    d_id: u64,
+    d_side: Side,
+    d_price: u32,
+    d_initial_quantity: u32,
+    d_remaining_quantity: u32,
+    d_valid: bool,
+    d_order_type: OrderType,
+}
+
+/// Struct to encapsulate:
+/// d_prices: a vector of the prices that an order matched
+/// d_total: the total price paid/money gained from the given order
+/// d_quantity: the the d_quantity bought/sold
+#[derive(Debug)]
+pub struct TradeInfo {
+    pub d_prices: Vec<u32>,
+    pub d_total: u32,
+    pub d_quantity: u32,
+}
+
+/// Struct to encapsulate:
+/// d_level_info: a HashMap mapping an u32 to an AtomicU64
+/// key: a price,
+/// value: the amount of valid orders at that price
+///
+/// uses lock-free updates to the HashMap
+pub struct PriceLevelInfo {
+    d_level_info: HashMap<u32, AtomicU64>,
+}
+
+/// OrderBook struct 
+/// d_orders: HashMap that maps the order's id to a pointer
+///     to the order
+/// d_order_creator: creates orders may be made static
+/// d_asks/d_bids: Maps price to orders at price level
+/// d_price_level_info: contains info about all price levels 
+/// may be made static
+pub struct OrderBook {
+    d_orders: HashMap<u64, Arc<RwLock<Order>>>,
+    d_asks: BTreeMap<u32, VecDeque<Arc<RwLock<Order>>>>,
+    d_bids: BTreeMap<u32, VecDeque<Arc<RwLock<Order>>>>,
+    d_bids_level_info: PriceLevelInfo,
+    d_asks_level_info: PriceLevelInfo,
+    d_trades_queue: Sender<Trades>,
+}
+
+
+pub struct Trades {
+    d_seller: u64,
+    d_buyer: u64,
+    d_quantity: u32,
+    d_price: u32,
+    d_seller_filled: bool,
+    d_buyer_filled: bool,
+    pub d_error_indication: SimError,
+}
+
+pub enum ServerNotification {
+    Trade(Trades),
+    Error(String),
 }
 
 impl std::fmt::Display for SimError {
@@ -30,67 +139,3 @@ impl std::fmt::Display for SimError {
         write!(f, "{}", message)
     }
 }
-
-
-//use orderbook::order_creator::{
-//    OrderRequest,
-//    create_order,
-//};
-//use orderbook::OrderType;
-//use orderbook::Side;
-//
-//
-//
-//use rand::Rng;
-//use tokio::sync::mpsc;
-//
-//
-//
-//fn create_order_request() -> OrderRequest {
-//    let mut rng = rand::thread_rng();
-//
-//    let order_type = match rng.gen_range(0..4) {
-//        0 => OrderType::GoodTillCancel,
-//        1 => OrderType::FillAndKill,
-//        2 => OrderType::FillOrKill,
-//        3 => OrderType::Market,
-//        _ => unreachable!(),
-//    };
-//
-//    let side = match rng.gen_range(0..2) {
-//        0 => Side::Buy,
-//        1 => Side::Sell,
-//        _ => unreachable!(),
-//    };
-//
-//    let quantity = rng.gen_range(2..20);
-//
-//    if order_type == OrderType::Market {
-//        OrderRequest::market_order_request(side, quantity).unwrap()
-//    } else {
-//        let price = rng.gen_range(15..25);
-//        OrderRequest::new(side, price, quantity, order_type).unwrap()
-//    }
-//}
-//
-//#[tokio::main]
-//async fn main() {
-//    let(tx, _rx) = mpsc::channel(10);
-//    let mut ob = orderbook::OrderBook::new(tx);
-//    for _ in 0..10 {
-//        let request =  create_order_request();
-//        eprintln!("{}", request);
-//
-//        ob.add_order(create_order(request)).await;
-//        //ob.display_ob().await;
-//    }
-//
-//    let buy = OrderRequest::new(Side::Buy, 10, 5, OrderType::GoodTillCancel).expect("ok");
-//    let sell = OrderRequest::new(Side::Sell, 8, 5, OrderType::GoodTillCancel).expect("ok");
-//
-//    ob.add_order(create_order(buy)).await;
-//    ob.add_order(create_order(sell)).await;
-//
-//    eprintln!("//////////");
-//    ob.display_ob().await;
-//}

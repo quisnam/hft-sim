@@ -1,10 +1,23 @@
-use tokio::{sync::RwLock, time::sleep};
-use tokio::sync::mpsc::Sender;
+use tokio::{
+    sync::RwLock,
+    time::sleep,
+    sync::mpsc::Sender,
+};
 
 pub mod misc;
 mod match_orders;
 
-use std::sync::atomic::{self, AtomicU64};
+use crate::{
+    Order,
+    OrderType,
+    Side,
+    SimError,
+    OrderBook,
+    Trades,
+    TradeInfo,
+    PriceLevelInfo,
+};
+
 use std::time::Duration;
 use std::{
     collections::{
@@ -15,37 +28,10 @@ use std::{
     sync::Arc, 
 };
 
-pub use crate::{ Side, SimError };
-pub use crate::order::{
-    Order,
-    OrderType,
-};
+
 
 use crate::orderbook::match_orders::match_order_and_price_level;
 pub use crate::trades::*;
-
-pub use self::misc::{
-    PriceLevelInfo,
-    TradeInfo,
-};
-
-
-/// OrderBook struct 
-/// d_orders: HashMap that maps the order's id to a pointer
-///     to the order
-/// d_order_creator: creates orders may be made static
-/// d_asks/d_bids: Maps price to orders at price level
-/// d_price_level_info: contains info about all price levels 
-/// may be made static
-pub struct OrderBook {
-    d_orders: HashMap<u64, Arc<RwLock<Order>>>,
-    d_asks: BTreeMap<u32, VecDeque<Arc<RwLock<Order>>>>,
-    d_bids: BTreeMap<u32, VecDeque<Arc<RwLock<Order>>>>,
-    d_bids_level_info: PriceLevelInfo,
-    d_asks_level_info: PriceLevelInfo,
-    d_trades_queue: Sender<Trades>,
-}
-
 
 impl OrderBook {
     pub fn new(trades_queue: Sender<Trades>) -> Self {

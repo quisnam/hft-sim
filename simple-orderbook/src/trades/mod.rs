@@ -1,15 +1,9 @@
 pub use crate::order::*;
-use crate::SimError;
+use crate::{
+    SimError,
+    Trades,
+};
 
-pub struct Trades {
-    d_seller: u64,
-    d_buyer: u64,
-    d_quantity: u32,
-    d_price: u32,
-    d_seller_filled: bool,
-    d_buyer_filled: bool,
-    pub d_error_indication: SimError,
-}
 
 impl Trades {
     pub fn new(seller_id: u64, buyer_id: u64, quantity: u32, price: u32, seller_filled: bool, buyer_filled: bool) -> Self {

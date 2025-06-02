@@ -2,22 +2,14 @@ use std::sync::atomic::{
     AtomicU64,
     Ordering
 };
-use crate::Side;
-use crate::SimError;
-use super::Order;
-use super::OrderType;
 
-
-/// The client creates an instance of this struct in order to create
-/// an order.
-/// The client has to specify a Side, a price and a quantity
-#[derive(Clone, Debug)]
-pub struct OrderRequest {
-    d_side: Side,
-    d_price: u32,
-    d_quantity: u32,
-    d_order_type: OrderType,
-}
+use crate::{
+    Side,
+    SimError,
+    Order,
+    OrderType,
+    OrderRequest,
+};
 
 impl std::fmt::Display for OrderRequest {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
