@@ -4,6 +4,7 @@ use super::{
 };
 
 impl  TradeNotification {
+    // The general way the server sends responses should be updated
     pub fn shutdown() -> Self {
         Self { d_order_id: 0, d_counter_party: None, d_price: 0, d_filled_quantity: 0, d_fully_filled: false }
     }

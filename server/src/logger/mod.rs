@@ -30,6 +30,7 @@ impl FileTradeLogger {
 impl TradeLogger for FileTradeLogger {
     async fn log(&self, trade: &Trades) {
         let log_line = format!(
+            // Traded ... quantity, each at ... betwenn ... and ...
             "Trade: {}@{} between {} and {}\n",
             trade.quantity(), trade.price(), trade.buyer(), trade.seller()
         );

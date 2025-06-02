@@ -21,18 +21,15 @@ pub async fn match_order_and_price_level(
         trades_queue: &mut Sender<Trades>
     )
 {
-    // eprintln!("match_order_and_price_is_called\nprice_level size is: {}\nvalid orders: {}", price_level.len(), price_level_info.get_count(*price));
     
-    // The current price level is empty. This can happen because I use lazy deletion
+    // In case the current price_level is empty
     if price_level_info.get_count(*price) == 0 {
-        // eprintln!("returning from match order and price level");
         return ;
     }
 
     let mut pops = 0;
 
     for bid in &mut *price_level {
-        //eprintln!("start matching");
         // The quantity of the order is exhausted
         if order.remaining_quantity() == 0 {
             break;
@@ -99,19 +96,19 @@ pub async fn match_order_and_price_level(
                 order.fill_all();
             }
         }
-        // eprintln!("{:?}", trade_info);
+
         if !bid.read().await.valid() {
             pops += 1;
         }
-        // eprintln!("finish_matching")
     }
 
+    // This is kinda sus
+    // theoretically the orders that are filled first should be in first in the queue so popping
+    // in the front should work. But I may introduce some locking in the future
     for _ in 0..pops {
-        // eprintln!("popping");
         price_level.pop_front();
     }
 
-    eprintln!("price level matched");
 }
 
 
@@ -153,5 +150,4 @@ pub async fn fill_trade(
 
     let _ = trades_queue.send(trade).await;
 
-    eprintln!("process_trades notified")
 }

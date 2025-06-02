@@ -23,11 +23,15 @@ impl std::fmt::Display for OrderRequest {
 }
 
 impl OrderRequest {
-    pub fn new(side: Side, price: u32, quantity: u32, order_type: OrderType) -> Result<OrderRequest, SimError> {
+    pub fn new(side: Side, price: u32, quantity: u32, order_type: OrderType)
+        -> Result<OrderRequest, SimError> 
+    {
         Self::valid(side, price, quantity, order_type)
     }
 
-    pub fn market_order_request(side: Side, quantity: u32) -> Result<OrderRequest, SimError> {
+    pub fn market_order_request(side: Side, quantity: u32) 
+        -> Result<OrderRequest, SimError> 
+    {
         Ok(
             OrderRequest {
                 d_side: side,
@@ -38,7 +42,9 @@ impl OrderRequest {
         )
     }
 
-    fn valid(side: Side, price: u32, quantity: u32, order_type: OrderType) -> Result<OrderRequest, SimError> {
+    fn valid(side: Side, price: u32, quantity: u32, order_type: OrderType) 
+        -> Result<OrderRequest, SimError> 
+    {
         
        
         Ok(OrderRequest {

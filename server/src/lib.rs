@@ -18,7 +18,6 @@ use orderbook::{
     OrderBook,
     Side,
     OrderType,
-    ServerNotification,
 };
 
 use futures::future::AbortHandle;
@@ -41,6 +40,11 @@ pub use server_client_com::{
 
 const MAX_MESSAGE_SIZE: usize = 1024 * 1024;
 
+// The server:
+// uses an OrderBook to manage orders,
+// Has a map from client Id to a ServerInternal Sender channel
+// A map from orderId to clientId
+// An AbortHandle to stop the execution of the trade processor
 pub struct TradingServer {
     d_orderbook: Arc<RwLock<OrderBook>>,
 
@@ -51,6 +55,7 @@ pub struct TradingServer {
     d_trade_processor: AbortHandle,
 }
 
+// Errors that can occur between Server and Client
 #[derive(Debug)]
 pub enum ProtocolError {
     Io(io::Error),
@@ -60,6 +65,7 @@ pub enum ProtocolError {
     Timeout,
 }
 
+// Encapsulates trade meta data send to the client
 #[derive(Clone, PartialEq, Eq)]
 pub struct TradeNotification {
     pub d_order_id: u64,
@@ -68,6 +74,7 @@ pub struct TradeNotification {
     pub d_filled_quantity: u32,
     pub d_fully_filled: bool,
 }
+
 
 
 

@@ -21,6 +21,7 @@ use tokio::sync::{
 
 #[derive(Debug)]
 
+/// Errors that can happen while the OrderBook runs
 pub enum SimError {
     InvalidOrder,
     KeyOverflow,
@@ -30,12 +31,22 @@ pub enum SimError {
     NoMatchFound,
 }
 
+/// A Order is either a Sell or a Buy order
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Side {
     Buy,
     Sell,
 }
 
+/// There are 4 kinds of Orders supported:
+/// GoodTillCancel -> remains active until either the quantity
+///     is exhausted or the Order is cancelled
+/// FillAndKill -> The Order is executed or not. It does not
+///     persist in the orderbook
+/// FillOrKill -> The Order is only executed if its desired quantity
+///     can be completely filled. Otherwise it is cancelled
+/// Market -> The Order buys or sells at market price, (lowest and highest
+///     respectively in this implementation)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OrderType {
     GoodTillCancel,
@@ -45,6 +56,8 @@ pub enum OrderType {
 }
 
 
+/// The client creates a series of OrderRequests that are promoted to Orders.
+/// Depending on what the desired OrderType is, the price can be omitted (Market)
 #[derive(Clone, Debug)]
 pub struct OrderRequest {
     d_side: Side,
@@ -110,6 +123,10 @@ pub struct OrderBook {
 }
 
 
+/// Encapsulates the information to a trade between two parties
+/// order_ids of seller and buyer, the quantity bought at the price
+/// and whether the orders are completely filled, i.e. their quantity
+/// is exhausted
 pub struct Trades {
     d_seller: u64,
     d_buyer: u64,
@@ -118,11 +135,6 @@ pub struct Trades {
     d_seller_filled: bool,
     d_buyer_filled: bool,
     pub d_error_indication: SimError,
-}
-
-pub enum ServerNotification {
-    Trade(Trades),
-    Error(String),
 }
 
 impl std::fmt::Display for SimError {

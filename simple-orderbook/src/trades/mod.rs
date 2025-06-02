@@ -6,7 +6,15 @@ use crate::{
 
 
 impl Trades {
-    pub fn new(seller_id: u64, buyer_id: u64, quantity: u32, price: u32, seller_filled: bool, buyer_filled: bool) -> Self {
+    pub fn new(
+        seller_id: u64,
+        buyer_id: u64,
+        quantity: u32,
+        price: u32,
+        seller_filled: bool,
+        buyer_filled: bool
+    ) -> Self {
+
         Self {
             d_seller: seller_id,
             d_buyer: buyer_id,

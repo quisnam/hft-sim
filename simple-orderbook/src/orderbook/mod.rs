@@ -45,21 +45,26 @@ impl OrderBook {
         }
     }
 
+    // removes and returns the order with the specified id
     pub fn remove(&mut self, order_id: &u64) -> Option<Arc<RwLock<Order>>> {
         self.d_orders.remove(order_id)
     }
 
+    // returns the total number of orders currently in the orderbook, i.e. waiting for a match
     pub fn len(&self) -> usize {
         self.d_orders.len()
     }
 
+    #[allow(dead_code)]
+    // This function will remain available for now.
+    // However currently it is not used.
     pub async fn lazy_deletion(&mut self) {
         loop {
             sleep(Duration::from_secs(2)).await;
 
             // Clean asks
             for asks in self.d_asks.values_mut() {
-                // eprintln!("asks before cleaning: {}", asks.len());
+
                 let mut pops: u32 = 0;
                 for ask in asks.iter_mut() {
                     if !ask.read().await.valid() {
@@ -71,7 +76,6 @@ impl OrderBook {
                     asks.remove(id as usize);
 
                 }
-                // eprintln!("asks after cleaning:  {}", asks.len());
             }
 
             // Clean bids
@@ -93,6 +97,7 @@ impl OrderBook {
             }
         }
     }
+
     // checks if there are valid orders with a price higher or equal than price
     pub fn is_in_highest_bids(&self, price: u32) -> bool {
        let Some((highest_price, _)) = self.d_bids.last_key_value() else {
@@ -103,8 +108,7 @@ impl OrderBook {
        self.d_bids
            .range(price..=*highest_price)
            .any(|(p, _orders)| {
-               // *p == price && 
-               // !orders.is_empty() && 
+
                self.d_bids_level_info.get_count(*p) > 0
            })
     }   
@@ -132,6 +136,7 @@ impl OrderBook {
         }
     }
 
+    // checks if there are matches and the order can be matched  fully
     pub async fn can_match_fully(&self, order: &Order) -> bool {
         let price = order.price();
         let quantity = order.remaining_quantity();
@@ -214,7 +219,14 @@ impl OrderBook {
             if order.remaining_quantity() == 0 {
                 break;
             }
-            match_order_and_price_level(&mut self.d_asks_level_info, &mut trade_info, order, price, asks, &mut self.d_trades_queue).await;
+            match_order_and_price_level(
+                &mut self.d_asks_level_info,
+                &mut trade_info,
+                order,
+                price,
+                asks,
+                &mut self.d_trades_queue
+            ).await;
         }
         trade_info
     }
@@ -240,7 +252,14 @@ impl OrderBook {
             if order.remaining_quantity() == 0 {
                 break;
             }            
-            match_order_and_price_level(&mut self.d_bids_level_info, &mut trade_info, order, price, bid, &mut self.d_trades_queue).await;
+            match_order_and_price_level(
+                &mut self.d_bids_level_info,
+                &mut trade_info,
+                order,
+                price,
+                bid,
+                &mut self.d_trades_queue
+            ).await;
         }
         trade_info
     }
@@ -254,6 +273,7 @@ impl OrderBook {
 
     // Add a new OrderRequest
     pub async fn add_order(&mut self, mut order: Order) -> u64 {
+        // Debugging
         // {
         //     static ATOM: AtomicU64 = AtomicU64::new(0);
         //     ATOM.fetch_add(1, atomic::Ordering::SeqCst);
@@ -261,65 +281,63 @@ impl OrderBook {
         //     //eprintln!("{}", val)
         // }
         // create order request and save parameters for easier access in the future
-        // eprintln!("Total orders in orderbook: {}\nIn asks: {}\nIn bids: {}", self.d_orders.len(), self.d_asks.len(), self.d_bids.len());
         
-        eprintln!("add_order called");
         let order_id = order.id();
         let order_price = order.price();
         let order_type = order.order_type();
         let side = order.side();
         
-        let mut _trade_info = TradeInfo::new();
-        // check if an Order can be executed [Maybe the can match will be merged with execute_trade_immediately
-        // as it kind of checks twice]
+        let mut trade_info = TradeInfo::new();
+
+        // executes orders
         match order_type {
-            OrderType::FillAndKill => {
+            OrderType::FillOrKill => {
                 if self.can_match_fully(&order).await {
-                     _trade_info = self.execute_trade_immediately(&mut order).await;
+                     trade_info = self.execute_trade_immediately(&mut order).await;
                 }
             },
             _ => {
-                _trade_info = self.execute_trade_immediately(&mut order).await;
+                trade_info = self.execute_trade_immediately(&mut order).await;
             },
         }
-
+        
+        // remaining quantity after executeing the trades
         let rem_quan = order.remaining_quantity();
 
-        eprintln!("Debug");
-
         if order_type == OrderType::FillOrKill || order_type  == OrderType::FillAndKill {
-            eprintln!("I am here");
-            if _trade_info.is_empty() {
-                // This causes a bug
+            if trade_info.is_empty() {
+                // Somehow the mpsc channel will block if the next statement is executed
+                // The limit (100) should have been reached but somehow the channel will not be
+                // drained
                 // let _ = self.d_trades_queue.send(Trades::error(SimError::NoMatchFound)).await;
-                eprintln!("good to know");
             }
-            eprintln!("otherwise");
             return order_id;
         }
 
 
-        eprintln!("Debug");
         let order_arc = Arc::new(RwLock::new(order));
         if self.d_orders.insert(order_id, Arc::clone(&order_arc)).is_some() {
+            // Maybe here as well
             // let _ = self.d_trades_queue.send(Trades::error(SimError::KeyOverflow)).await;
         };
 
 
 
 
-        let price_levels = match side {
-            Side::Buy => &mut self.d_bids,
-            Side::Sell => &mut self.d_asks,
-        };
 
         // If the order has been fulfilled it will not be added to the orders
         // waiting to be executed.
         if rem_quan != 0 {
-            match side {
-                Side::Buy => self.d_bids_level_info.increment(order_price),
-                Side::Sell => self.d_asks_level_info.increment(order_price),
-            }
+            let price_levels = match side {
+                Side::Buy => {
+                    self.d_bids_level_info.increment(order_price);
+                    &mut self.d_bids
+                },
+                Side::Sell => {
+                    self.d_asks_level_info.increment(order_price);
+                    &mut   self.d_asks
+                },
+            };
 
             price_levels
                 .entry(order_price)
@@ -373,7 +391,10 @@ impl OrderBook {
         }
     }
 
-    async fn remove_order_from_price_level(price_level: &mut VecDeque<Arc<RwLock<Order>>>, order_id: &u64) {
+    async fn remove_order_from_price_level(
+        price_level: &mut VecDeque<Arc<RwLock<Order>>>,
+        order_id: &u64
+    ) {
         
         price_level.retain(|order| {
             let curr_id = tokio::task::block_in_place(|| {

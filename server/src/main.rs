@@ -1,8 +1,7 @@
 use std::sync::Arc;
-use console_subscriber::{
-    init,
-    ConsoleLayer,
-};
+
+// for profiling
+use console_subscriber::init;
 
 use server::TradingServer;
 
@@ -12,9 +11,6 @@ use server::TradingServer;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>>{
     init();
-    //let console_layer = ConsoleLayer::builder()
-    //  .server_addr(([0, 0, 0, 0], 8080))
-    //  .init();
 
     let server = TradingServer::new().await;
 
