@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-// for profiling
+// for tokio-console
 use console_subscriber::init;
 
 use server::TradingServer;
